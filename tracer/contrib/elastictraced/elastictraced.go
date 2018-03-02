@@ -4,6 +4,7 @@
 package elastictraced
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"io/ioutil"
@@ -17,7 +18,7 @@ import (
 // MaxContentLength is the maximum content length for which we'll read and capture
 // the contents of the request body. Anything larger will still be traced but the
 // body will not be captured as trace metadata.
-const MaxContentLength = 500 * 1024
+const MaxContentLength = 5 * 1024
 
 // TracedTransport is a traced HTTP transport that captures Elasticsearch spans.
 type TracedTransport struct {
@@ -37,14 +38,15 @@ func (t *TracedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	span.SetMeta("elasticsearch.url", req.URL.Path)
 	span.SetMeta("elasticsearch.params", req.URL.Query().Encode())
 
-	contentLength, _ := strconv.Atoi(req.Header.Get("Content-Length"))
-	if req.Body != nil && contentLength < MaxContentLength {
-		buf, err := ioutil.ReadAll(req.Body)
+	if req.Body != nil {
+		buf := bufio.NewReaderSize(req.Body, MaxContentLength)
+
+		snapshot, err := buf.Peek(MaxContentLength)
 		if err != nil {
 			return nil, err
 		}
-		span.SetMeta("elasticsearch.body", string(buf))
-		req.Body = ioutil.NopCloser(bytes.NewBuffer(buf))
+		span.SetMeta("elasticsearch.body", string(snapshot))
+		req.Body = ioutil.NopCloser(buf)
 	}
 
 	// Run the request using the standard transport.
