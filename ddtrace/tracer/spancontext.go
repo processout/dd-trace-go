@@ -122,12 +122,12 @@ func newTrace(onFinish func([]*span)) *trace {
 
 // push pushes a new span into the trace. If the buffer is full, it returns
 // a errBufferFull error.
-func (t *trace) push(sp *span) error {
+func (t *trace) push(sp *span) *tracerError {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	if len(t.spans) >= traceMaxSize {
-		return &spanBufferFullError{count: len(t.spans)}
+		return spanBufferError(len(t.spans))
 	}
 	t.spans = append(t.spans, sp)
 	return nil

@@ -7,32 +7,33 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestAggregateErrors(t *testing.T) {
+func TestErrorSummary(t *testing.T) {
 	assert := assert.New(t)
 
-	errChan := make(chan error, 100)
-	errChan <- &traceEncodingError{context: errors.New("couldn't encode at byte 0")}
-	errChan <- &traceEncodingError{context: errors.New("couldn't encode at byte 0")}
-	errChan <- &traceEncodingError{context: errors.New("couldn't encode at byte 0")}
-	errChan <- &traceEncodingError{context: errors.New("couldn't encode at byte 0")}
-	errChan <- &dataLossError{count: 42}
-	errChan <- nil
-	errChan <- errors.New("unexpected error type")
+	errChan := make(chan *tracerError, 100)
+	errChan <- encodingError(errors.New("encoding error message 1"))
+	errChan <- encodingError(errors.New("encoding error message 2"))
+	errChan <- encodingError(errors.New("encoding error message 3"))
+	errChan <- encodingError(errors.New("encoding error message 4"))
+	errChan <- traceBufferError(1)
+	errChan <- traceBufferError(2)
+	errChan <- traceBufferError(3)
+	errChan <- transportError(errors.New("transport error msg"), 10)
 
-	errs := aggregateErrors(errChan)
+	errs := newErrorSummary(errChan)
 
-	assert.Equal(map[string]errorSummary{
-		"*tracer.traceEncodingError": errorSummary{
-			Count:   4,
-			Example: "error encoding trace: couldn't encode at byte 0",
+	assert.Equal(map[errorTopic]errorSummary{
+		topicEncoding: errorSummary{
+			count:   4,
+			example: "encoding error (encoding error message 1)",
 		},
-		"*tracer.dataLossError": errorSummary{
-			Count:   1,
-			Example: "lost traces (count: 42), error: <nil>",
+		topicTraceBuffer: errorSummary{
+			count:   3,
+			example: "trace buffer full (traces lost: 1)",
 		},
-		"*errors.errorString": errorSummary{
-			Count:   1,
-			Example: "unexpected error type",
+		topicTransport: errorSummary{
+			count:   1,
+			example: "transport error (transport error msg; traces lost: 10)",
 		},
 	}, errs)
 }

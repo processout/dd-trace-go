@@ -588,7 +588,7 @@ func newTracerChannels() *tracer {
 	return &tracer{
 		payload:        newPayload(),
 		traceBuffer:    make(chan []*span, traceBufferSize),
-		errorBuffer:    make(chan error, errorBufferSize),
+		errorBuffer:    make(chan *tracerError, errorBufferSize),
 		flushTracesReq: make(chan struct{}, 1),
 		flushErrorsReq: make(chan struct{}, 1),
 	}
@@ -647,7 +647,7 @@ func TestPushErr(t *testing.T) {
 
 	tracer := newTracerChannels()
 
-	err := fmt.Errorf("ooops")
+	err := encodingError(fmt.Errorf("ooops"))
 	tracer.pushError(err)
 
 	assert.Len(tracer.errorBuffer, 1, "there should be data in channel")
@@ -658,12 +658,12 @@ func TestPushErr(t *testing.T) {
 
 	many := errorBufferSize/2 + 1
 	for i := 0; i < many; i++ {
-		tracer.pushError(fmt.Errorf("err %d", i))
+		tracer.pushError(encodingError(fmt.Errorf("err %d", i)))
 	}
 	assert.Len(tracer.errorBuffer, many, "all errs should be in the channel, not yet blocking")
 	assert.Len(tracer.flushErrorsReq, 1, "a err flush should have been requested")
 	for i := 0; i < cap(tracer.errorBuffer); i++ {
-		tracer.pushError(fmt.Errorf("err %d", i))
+		tracer.pushError(encodingError(fmt.Errorf("err %d", i)))
 	}
 	// if we reach this, means pushError is not blocking, which is what we want to double-check
 }

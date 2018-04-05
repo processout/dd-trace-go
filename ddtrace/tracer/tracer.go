@@ -1,7 +1,6 @@
 package tracer
 
 import (
-	"errors"
 	"log"
 	"os"
 	"strconv"
@@ -32,7 +31,7 @@ type tracer struct {
 	exitReq        chan struct{}
 
 	traceBuffer chan []*span
-	errorBuffer chan error
+	errorBuffer chan *tracerError
 
 	// stopped is a channel that will be closed when the worker has exited.
 	stopped chan struct{}
@@ -120,7 +119,7 @@ func newTracer(opts ...StartOption) *tracer {
 		flushErrorsReq: make(chan struct{}, 1),
 		exitReq:        make(chan struct{}),
 		traceBuffer:    make(chan []*span, traceBufferSize),
-		errorBuffer:    make(chan error, errorBufferSize),
+		errorBuffer:    make(chan *tracerError, errorBufferSize),
 		stopped:        make(chan struct{}),
 	}
 
@@ -167,10 +166,7 @@ func (t *tracer) pushTrace(trace []*span) {
 	default:
 		// given the high throughput support of the payload (~700MBps) this
 		// should never happen, nevertheless we should know if it ever does.
-		t.pushError(&dataLossError{
-			context: errors.New("trace buffer full, dropping trace"),
-			count:   len(trace),
-		})
+		t.pushError(traceBufferError(len(trace)))
 	}
 	if t.syncPush != nil {
 		// only in tests
@@ -178,7 +174,7 @@ func (t *tracer) pushTrace(trace []*span) {
 	}
 }
 
-func (t *tracer) pushError(err error) {
+func (t *tracer) pushError(err *tracerError) {
 	if len(t.errorBuffer) >= cap(t.errorBuffer)/2 { // starts being full, anticipate, try and flush soon
 		select {
 		case t.flushErrorsReq <- struct{}{}:
@@ -298,7 +294,7 @@ func (t *tracer) flushTraces() {
 	}
 	_, err := t.config.transport.send(t.payload)
 	if err != nil {
-		t.pushError(&dataLossError{context: err, count: t.payload.itemCount()})
+		t.pushError(transportError(err, t.payload.itemCount()))
 	} else {
 		t.payload.reset()
 	}
@@ -328,7 +324,7 @@ func (t *tracer) forceFlush() {
 // the flushTracesReq channel.
 func (t *tracer) pushPayload(trace []*span) {
 	if err := t.payload.push(trace); err != nil {
-		t.pushError(&traceEncodingError{context: err})
+		t.pushError(encodingError(err))
 	}
 	if t.payload.size() > payloadSizeLimit {
 		select {

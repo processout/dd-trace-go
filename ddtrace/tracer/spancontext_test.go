@@ -32,7 +32,7 @@ func TestNewSpanContextPushError(t *testing.T) {
 
 	select {
 	case err := <-tracer.errorBuffer:
-		assert.Equal(t, &spanBufferFullError{count: 2}, err)
+		assert.Equal(t, spanBufferError(2), err)
 	default:
 		t.Fatal("no error pushed")
 	}
@@ -67,7 +67,6 @@ func TestSpanTracePushOne(t *testing.T) {
 		t.Logf("buffer: %v", buffer)
 	default:
 		traces := transport.Traces()
-		assert.NoError(err)
 		assert.Len(traces, 1)
 		trace := traces[0]
 		assert.Len(trace, 1, "there was a trace in the channel")
@@ -198,10 +197,9 @@ func TestSpanContextPushFull(t *testing.T) {
 
 	buffer := newTrace(nil)
 	assert := assert.New(t)
-	assert.NoError(buffer.push(span1))
-	assert.NoError(buffer.push(span2))
-	err := buffer.push(span3)
-	assert.Equal(&spanBufferFullError{count: 2}, err)
+	assert.Nil(buffer.push(span1))
+	assert.Nil(buffer.push(span2))
+	assert.Equal(spanBufferError(2), buffer.push(span3))
 }
 
 func TestSpanContextBaggage(t *testing.T) {
